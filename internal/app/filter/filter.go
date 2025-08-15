@@ -3,12 +3,12 @@ package filter
 import "github.com/ethereum/go-ethereum/common"
 
 type Matcher struct {
-	users map[[20]byte]string
+	users map[common.Address]string
 }
 
 func NewMatcher(addrs map[string]string) *Matcher {
 	m := &Matcher{
-		users: make(map[[20]byte]string, len(addrs)),
+		users: make(map[common.Address]string, len(addrs)),
 	}
 	for a, uid := range addrs {
 		addr := common.HexToAddress(a)
@@ -18,24 +18,17 @@ func NewMatcher(addrs map[string]string) *Matcher {
 	return m
 }
 
-func (m *Matcher) Match(from string, to *string) (fromUID, toUID string, ok bool) {
-	var f, t string
+func (m *Matcher) Match(from string, to *string) (string, string, bool) {
+	var fromUID, toUID string
 	if from != "" {
-		f = common.HexToAddress(from).Hex()
-
-	}
-	if to != nil {
-		t = common.HexToAddress(*to).Hex()
-	}
-
-	if uid, okf := m.users[common.HexToAddress(f)]; okf {
-		return uid, "", true
-	}
-	if to != nil {
-		if uid, okt := m.users[common.HexToAddress(t)]; okt {
-			return "", uid, true
+		if iud, ok := m.users[common.HexToAddress(from)]; ok {
+			fromUID = iud
 		}
 	}
-
-	return "", "", false
+	if to != nil {
+		if iud, ok := m.users[common.HexToAddress(*to)]; ok {
+			toUID = iud
+		}
+	}
+	return fromUID, toUID, (fromUID != "" || toUID != "")
 }

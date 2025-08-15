@@ -30,3 +30,7 @@ Bonus 2: Explain (no need to code) how you would handle edge cases like retry si
 You can use any RPC provider you want. If you need an example or reference
 
 [RPC ethereum](https://docs.blockdaemon.com/reference/how-to-access-ethereum-api)
+
+## Environment you need to run the code
+1. ETH_WS_URL=your-eth-ws-url example: wss://mainnet.infura.io/ws/v3/0x1234567890abcdef1234567890abcdef12345678
+2. ETH_HTTP_URL=your-eth-http-url example: https://mainnet.infura.io/v3/0x1234567890abcdef1234567890abcdef12345678

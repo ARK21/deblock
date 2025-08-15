@@ -18,7 +18,11 @@ func LoadUsers(file string) map[string]string {
 
 	users := make(map[string]string, 512_000)
 
-	for i := 0; i < 5; i++ {
+	if _, err := reader.Read(); err != nil {
+		log.Fatal("Error reading header")
+	}
+
+	for i := 0; i < 500_000; i++ {
 		records, err := reader.Read()
 		if err != nil {
 			if err.Error() == "EOF" {
@@ -26,7 +30,7 @@ func LoadUsers(file string) map[string]string {
 			}
 			log.Fatal(err)
 		}
-		users[records[0]] = records[1]
+		users[records[0]] = fmt.Sprintf("%06d", i)
 	}
 
 	fmt.Println("loaded", len(users), "users")
