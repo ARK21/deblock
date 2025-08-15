@@ -1,5 +1,7 @@
 package config
 
+import "os"
+
 type Config struct {
 	RPCURLs           []string
 	KafkaBrokers      []string
@@ -9,6 +11,7 @@ type Config struct {
 	KafkaRequiredAcks string
 	Confirmations     int
 	ReorgDepth        int
+	UsersFile         string
 }
 
 func Default() Config {
@@ -17,4 +20,16 @@ func Default() Config {
 		Confirmations: 3,
 		ReorgDepth:    12,
 	}
+}
+
+func Read() Config {
+	cfg := Default()
+
+	if usersFile, exists := os.LookupEnv("USERS_FILE"); exists {
+		cfg.UsersFile = usersFile
+	} else {
+		cfg.UsersFile = "./users.csv"
+	}
+
+	return cfg
 }
