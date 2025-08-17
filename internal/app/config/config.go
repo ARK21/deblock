@@ -44,6 +44,16 @@ func Read() Config {
 	} else {
 		log.Fatal("ETH_HTTP_URL env variable not set")
 	}
+	if brokers, ok := os.LookupEnv("KAFKA_BROKERS"); ok {
+		cfg.KafkaBrokers = []string{brokers}
+	} else {
+		log.Fatal("KAFKA_BROKERS env variable not set")
+	}
+	if kt, ok := os.LookupEnv("KAFKA_TOPIC"); ok {
+		cfg.KafkaTopic = kt
+	} else {
+		log.Fatal("KAFKA_TOPIC env variable not set")
+	}
 
 	return cfg
 }

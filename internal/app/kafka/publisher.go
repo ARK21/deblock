@@ -9,7 +9,7 @@ import (
 )
 
 type Producer interface {
-	Send(event TxEvent) error
+	Send(event MatchedTxEvent) error
 	Close() error
 }
 

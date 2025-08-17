@@ -11,6 +11,8 @@ import (
 	"github.com/ARK21/deblock/internal/app/config"
 	"github.com/ARK21/deblock/internal/app/filter"
 	"github.com/ARK21/deblock/internal/app/heads"
+	"github.com/ARK21/deblock/internal/app/kafka"
+	"github.com/ARK21/deblock/internal/app/processor"
 	"github.com/ARK21/deblock/internal/app/rpc"
 	"github.com/ARK21/deblock/internal/app/users"
 )
@@ -27,20 +29,37 @@ func main() {
 		cancel()
 	}()
 
-	cnf := config.Read()
+	conf := config.Read()
 
-	u := users.LoadUsers(cnf.UsersFile)
+	u := users.LoadUsers(conf.UsersFile)
 
 	matcher := filter.NewMatcher(u)
 
-	client, err := rpc.NewGethClient(ctx, cnf.WsURL, cnf.HttpUrl)
+	client, err := rpc.NewGethClient(ctx, conf.WsURL, conf.HttpUrl)
 	if err != nil {
 		log.Fatalf("rpc: %v", err)
 	}
 
-	finalizer := heads.NewFinalizer(cnf.Confirmations)
+	publisher, err := kafka.NewKafkaPublisher(conf.KafkaBrokers)
+	if err != nil {
+		log.Fatal("error creating kafka publisher:", err)
+	}
+
+	bus, err := kafka.NewEventBus(publisher, conf.KafkaTopic)
+	if err != nil {
+		log.Fatal("error creating event bus:", err)
+	}
+
+	chainID, err := client.GetChainID(ctx)
+	if err != nil {
+		log.Fatalf("get chain ID error: %v", err)
+	}
+
+	srv := processor.NewService(client, matcher, bus, chainID)
+
+	finalizer := heads.NewFinalizer(conf.Confirmations)
 	hch, ech := client.SubscribeNewHeads(ctx)
-	log.Printf("subscribed to newHeads (confs=%d)", cnf.Confirmations)
+	log.Printf("subscribed to newHeads (confs=%d)", conf.Confirmations)
 
 	for {
 		select {
@@ -62,12 +81,7 @@ func main() {
 					log.Printf("get block by number %v: %v", fh.Number, err)
 					continue
 				}
-				matches := 0
-				for _, tx := range blk.Txs {
-					if _, _, ok := matcher.Match(tx.From, tx.To); ok {
-						matches++
-					}
-				}
+				matches, _ := srv.ProcessBlock(ctx, blk, false)
 				log.Printf("finalized block=%d txs=%d matches=%d", blk.Number, len(blk.Txs), matches)
 			}
 		case err := <-ech:

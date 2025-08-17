@@ -20,6 +20,7 @@ type Client interface {
 	GetBlockByHash(ctx context.Context, hash string, fullTx bool) (Block, error)
 	GetBlockByNumber(ctx context.Context, number uint64, fullTx bool) (Block, error)
 	GetTxReceipt(ctx context.Context, txHash string) (Receipt, error)
+	GetChainID(ctx context.Context) (uint64, error)
 }
 
 type Tx struct {
@@ -59,9 +60,13 @@ func NewGethClient(ctx context.Context, wsURL, httpURL string) (*GethClient, err
 			return nil, fmt.Errorf("http dial error: %w", err)
 		}
 	}
-	if ws == nil && http == nil {
-		return nil, fmt.Errorf("both ws and http clients are nil")
+	if ws == nil {
+		return nil, fmt.Errorf("ws client is nil")
 	}
+	if http == nil {
+		return nil, fmt.Errorf("http client is nil")
+	}
+
 	return &GethClient{ws: ws, http: http}, nil
 }
 
@@ -122,9 +127,6 @@ type rpcBlock struct {
 }
 
 func (c *GethClient) GetBlockByHash(ctx context.Context, hash string, fullTx bool) (Block, error) {
-	if c.http == nil {
-		return Block{}, fmt.Errorf("http client is nil")
-	}
 	var rb rpcBlock
 	if err := c.http.CallContext(ctx, &rb, "eth_getBlockByHash", hash, fullTx); err != nil {
 		return Block{}, err
@@ -133,9 +135,6 @@ func (c *GethClient) GetBlockByHash(ctx context.Context, hash string, fullTx boo
 }
 
 func (c *GethClient) GetBlockByNumber(ctx context.Context, number uint64, fullTx bool) (Block, error) {
-	if c.http == nil {
-		return Block{}, fmt.Errorf("http client is nil")
-	}
 	var rb rpcBlock
 	if err := c.http.CallContext(ctx, &rb, "eth_getBlockByNumber", hexutil.Uint64(number), fullTx); err != nil {
 		return Block{}, err
@@ -150,9 +149,6 @@ type rpcReceipt struct {
 }
 
 func (c *GethClient) GetTxReceipt(ctx context.Context, txHash string) (Receipt, error) {
-	if c.http == nil {
-		return Receipt{}, fmt.Errorf("http client is nil")
-	}
 	var rr rpcReceipt
 	if err := c.http.CallContext(ctx, &rr, "eth_getTransactionReceipt", txHash); err != nil {
 		return Receipt{}, err
@@ -166,6 +162,15 @@ func (c *GethClient) GetTxReceipt(ctx context.Context, txHash string) (Receipt, 
 		GasUsed:           fmt.Sprintf("%d", uint64(rr.GasUsed)),
 		EffectiveGasPrice: egp.String(),
 	}, nil
+}
+
+func (c *GethClient) GetChainID(ctx context.Context) (uint64, error) {
+	var hex hexutil.Big
+	if err := c.http.CallContext(ctx, &hex, "eth_chainId"); err != nil {
+		return 0, err
+	}
+
+	return (*big.Int)(&hex).Uint64(), nil
 }
 
 func convertBlock(rb rpcBlock) Block {
