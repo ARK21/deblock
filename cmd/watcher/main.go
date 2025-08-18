@@ -58,7 +58,10 @@ func main() {
 	srv := processor.NewService(client, matcher, bus, chainID)
 
 	finalizer := heads.NewFinalizer(conf.Confirmations)
-	hch, ech := client.SubscribeNewHeads(ctx)
+
+	src := heads.NewSource(client, conf.HeadPollInterval, conf.WSReconnectFloor, conf.WSReconnectCeil)
+
+	hch, ech := src.Run(ctx)
 	log.Printf("subscribed to newHeads (confs=%d)", conf.Confirmations)
 
 	for {

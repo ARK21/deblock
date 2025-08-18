@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/ARK21/deblock/internal/app/filter"
@@ -40,26 +41,76 @@ func NewService(rpcClient rpc.Client, matcher *filter.Matcher, eventBus *cqrs.Ev
 }
 
 func (s *Service) ProcessBlock(ctx context.Context, blk rpc.Block, reorged bool) (int, error) {
-	matches := 0
+	type match struct {
+		tx  rpc.Tx
+		in  string
+		out string
+	}
+	var ms []match
 	for _, tx := range blk.Txs {
 		fromUID, toUID, ok := s.Matcher.Match(tx.From, tx.To)
 		if !ok {
 			continue
 		}
-		matches++
+		ms = append(ms, match{tx: tx, in: toUID, out: fromUID})
+	}
+	if len(ms) == 0 {
+		return 0, nil
+	}
 
-		rcpt, err := getReceiptWithTRetry(ctx, s.RPC, tx.Hash, 3, 200*time.Millisecond)
-		if err != nil {
+	//Batch receipts
+	hashes := make([]string, len(ms))
+	seen := make(map[string]struct{}, len(ms))
+	for _, m := range ms {
+		if _, ok := seen[m.tx.Hash]; !ok {
+			seen[m.tx.Hash] = struct{}{}
+			hashes = append(hashes, m.tx.Hash)
+		}
+	}
+
+	ctxTO, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	receipts, err := s.RPC.BatchGetReceipts(ctxTO, hashes)
+	if err != nil {
+		// fallback (rare): fetch individually with small concurrency
+		receipts = make(map[string]rpc.Receipt, len(hashes))
+		sem := make(chan struct{}, 8) // limit concurrency to 10
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for _, hash := range hashes {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(h string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				rctx, cc := context.WithTimeout(ctxTO, 5*time.Second)
+				defer cc()
+				if r, e := s.RPC.GetTxReceipt(rctx, h); e == nil {
+					mu.Lock()
+					receipts[h] = r
+					mu.Unlock()
+				} else {
+					log.Printf("failed to get receipt for %s: %v", h, e)
+				}
+			}(hash)
+		}
+		wg.Wait()
+	}
+
+	for _, m := range ms {
+		rcpt, ok := receipts[m.tx.Hash]
+		if !ok {
+			log.Printf("no receipt for tx %s in block %d", m.tx.Hash, blk.Number)
 			continue
 		}
 
-		from := common.HexToAddress(tx.From).Hex()
+		from := common.HexToAddress(m.tx.From).Hex()
 		to := ""
-		if tx.To != nil {
-			to = common.HexToAddress(*tx.To).Hex()
+		if m.tx.To != nil {
+			to = common.HexToAddress(*m.tx.To).Hex()
 		}
 
-		amountWei := strToBig(tx.Value)
+		amountWei := strToBig(m.tx.Value)
 		feeWei := big.NewInt(0)
 		gasUsed := strToBig(rcpt.GasUsed)
 		egp := strToBig(rcpt.EffectiveGasPrice)
@@ -73,7 +124,7 @@ func (s *Service) ProcessBlock(ctx context.Context, blk rpc.Block, reorged bool)
 		}
 
 		event := kafka.MatchedTxEvent{
-			TxHash:      tx.Hash,
+			TxHash:      m.tx.Hash,
 			BlockNumber: blk.Number,
 			BlockTime:   int64(blk.Timestamp),
 			From:        from,
@@ -88,32 +139,33 @@ func (s *Service) ProcessBlock(ctx context.Context, blk rpc.Block, reorged bool)
 		}
 
 		// Emit for incoming
-		if toUID != "" {
+		if m.in != "" {
 			ie := event
 			ie.Header = kafka.NewMessageHeader("MatchedTxEvent")
-			ie.UserID = toUID
+			ie.UserID = m.in
 			ie.Address = to
 			ie.Direction = "in"
 
-			if err := s.EventBus.Publish(ctx, ie); err != nil {
+			if err = s.EventBus.Publish(ctx, ie); err != nil {
 				log.Printf("failed to publish event: %v", err)
 			}
 		}
 
 		// Emit for outgoing
-		if fromUID != "" {
+		if m.out != "" {
 			oe := event
 			oe.Header = kafka.NewMessageHeader("MatchedTxEvent")
-			oe.UserID = fromUID
+			oe.UserID = m.out
 			oe.Address = from
 			oe.Direction = "out"
 
-			if err := s.EventBus.Publish(ctx, oe); err != nil {
+			if err = s.EventBus.Publish(ctx, oe); err != nil {
 				log.Printf("failed to publish event: %v", err)
 			}
 		}
+
 	}
-	return matches, nil
+	return len(ms), nil
 }
 
 func weiToEth(wei *big.Int) string {

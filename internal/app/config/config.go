@@ -3,26 +3,30 @@ package config
 import (
 	"log"
 	"os"
+	"time"
 )
 
 type Config struct {
-	WsURL             string
-	HttpUrl           string
-	KafkaBrokers      []string
-	KafkaTopic        string
-	KafkaIdempotent   bool
-	KafkaCompression  string
-	KafkaRequiredAcks string
-	Confirmations     int
-	ReorgDepth        int
-	UsersFile         string
+	WsURL            string
+	HttpUrl          string
+	KafkaBrokers     []string
+	KafkaTopic       string
+	Confirmations    int
+	ReorgDepth       int
+	UsersFile        string
+	HeadPollInterval time.Duration
+	WSReconnectFloor time.Duration
+	WSReconnectCeil  time.Duration
 }
 
 func Default() Config {
 	return Config{
-		KafkaTopic:    "tx_events",
-		Confirmations: 1,
-		ReorgDepth:    12,
+		KafkaTopic:       "tx_events",
+		Confirmations:    1,
+		ReorgDepth:       12,
+		HeadPollInterval: 3 * time.Second,
+		WSReconnectFloor: 1 * time.Second,
+		WSReconnectCeil:  30 * time.Second,
 	}
 }
 
