@@ -40,5 +40,5 @@ type MatchedTxEvent struct {
 
 	Status  string `json:"status"`
 	ChainID uint64 `json:"chain_id"`
-	Reorged bool   `json:"reorged,omitempty"`
+	Reorged bool   `json:"reorged"`
 }

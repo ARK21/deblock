@@ -24,6 +24,7 @@ type Tx struct {
 }
 
 type Block struct {
+	Hash       string
 	Number     uint64
 	ParentHash string
 	Timestamp  uint64

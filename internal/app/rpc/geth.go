@@ -88,6 +88,7 @@ type rpcTx struct {
 }
 
 type rpcBlock struct {
+	Hash       common.Hash    `json:"hash"`
 	Number     hexutil.Uint64 `json:"number"`
 	ParentHash common.Hash    `json:"parentHash"`
 	Timestamp  hexutil.Uint64 `json:"timestamp"`
@@ -193,6 +194,7 @@ func (c *GethClient) GetBlockNumber(ctx context.Context) (uint64, error) {
 
 func convertBlock(rb rpcBlock) Block {
 	b := Block{
+		Hash:       rb.Hash.Hex(),
 		Number:     uint64(rb.Number),
 		ParentHash: rb.ParentHash.Hex(),
 		Timestamp:  uint64(rb.Timestamp),
