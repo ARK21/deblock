@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -17,12 +18,14 @@ type Config struct {
 	HeadPollInterval time.Duration
 	WSReconnectFloor time.Duration
 	WSReconnectCeil  time.Duration
+	CheckpointFile   string
+	BootstrapBlocks  int
 }
 
 func Default() Config {
 	return Config{
 		KafkaTopic:       "tx_events",
-		Confirmations:    1,
+		Confirmations:    3,
 		ReorgDepth:       12,
 		HeadPollInterval: 3 * time.Second,
 		WSReconnectFloor: 1 * time.Second,
@@ -57,6 +60,20 @@ func Read() Config {
 		cfg.KafkaTopic = kt
 	} else {
 		log.Fatal("KAFKA_TOPIC env variable not set")
+	}
+	if cf, ok := os.LookupEnv("CHECKPOINT_FILE"); ok {
+		cfg.CheckpointFile = cf
+	} else {
+		cfg.CheckpointFile = "./data/checkpoint.json"
+	}
+	if bb, ok := os.LookupEnv("BOOTSTRAP_BLOCKS"); ok {
+		if bbInt, err := strconv.Atoi(bb); err == nil {
+			cfg.BootstrapBlocks = bbInt
+		} else {
+			log.Fatalf("invalid BOOTSTRAP_BLOCKS value: %v", err)
+		}
+	} else {
+		cfg.BootstrapBlocks = 0
 	}
 
 	return cfg

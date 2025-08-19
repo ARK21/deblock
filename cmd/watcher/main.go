@@ -6,7 +6,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/ARK21/deblock/internal/app/backfill"
+	"github.com/ARK21/deblock/internal/app/checkpoint"
 	"github.com/ARK21/deblock/internal/app/config"
 	"github.com/ARK21/deblock/internal/app/filter"
 	"github.com/ARK21/deblock/internal/app/heads"
@@ -25,11 +28,18 @@ func main() {
 		ch := make(chan os.Signal, 1)
 		signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 		<-ch
-		log.Panicln("starting graceful shutdown")
+		log.Println("starting graceful shutdown")
 		cancel()
 	}()
 
 	conf := config.Read()
+
+	fs := checkpoint.NewFileStore(conf.CheckpointFile)
+	st, err := fs.Load(ctx)
+	if err != nil {
+		log.Fatalf("checkpoint load: %v", err)
+	}
+	log.Printf("checkpoint: last_finalized=%d", st.LastFinalized)
 
 	u := users.LoadUsers(conf.UsersFile)
 
@@ -58,13 +68,51 @@ func main() {
 	srv := processor.NewService(client, matcher, bus, chainID)
 
 	finalizer := heads.NewFinalizer(conf.Confirmations)
+	reorgMgr := reorg.NewManager(conf.ReorgDepth)
+
+	head, err := client.GetBlockNumber(ctx)
+	if err != nil {
+		log.Fatal("error getting block number:", err)
+	}
+	var target uint64
+	if head >= uint64(conf.Confirmations) {
+		target = head - uint64(conf.Confirmations)
+	} else {
+		target = 0
+	}
+
+	// If first run with no checkpoint, optionally limit bootstrap depth
+	bootstrap := uint64(conf.BootstrapBlocks) // e.g., 0 (all) or 5000
+	start := st.LastFinalized + 1
+	if st.LastFinalized == 0 && bootstrap > 0 && target > bootstrap {
+		start = target - bootstrap + 1
+	}
+	if start <= target {
+		log.Printf("backfill: %d -> %d (target finalized)", start, target)
+		var lastSaved time.Time
+		save := func(n uint64) {
+			// throttle saves to disk (e.g., every 250ms)
+			if time.Since(lastSaved) < 250*time.Millisecond {
+				return
+			}
+		_:
+			fs.Save(ctx, checkpoint.State{LastFinalized: n, UpdatedAt: time.Now()})
+			lastSaved = time.Now()
+		}
+		if err := backfill.Run(ctx, client, srv, reorgMgr, start, target, save); err != nil {
+			log.Fatalf("backfill: %v", err)
+		}
+		// ensure final save
+		_ = fs.Save(ctx, checkpoint.State{LastFinalized: target, UpdatedAt: time.Now()})
+		log.Printf("backfill done up to %d", target)
+	} else {
+		log.Printf("no backfill needed (checkpoint at %d, target %d)", st.LastFinalized, target)
+	}
 
 	src := heads.NewSource(client, conf.HeadPollInterval, conf.WSReconnectFloor, conf.WSReconnectCeil)
 
 	hch, ech := src.Run(ctx)
 	log.Printf("subscribed to newHeads (confs=%d)", conf.Confirmations)
-
-	reorgMgr := reorg.NewManager(conf.ReorgDepth)
 
 	for {
 		select {
@@ -89,6 +137,7 @@ func main() {
 					// normal path
 					matches, _ := srv.ProcessBlock(ctx, blk, false)
 					reorgMgr.Record(blk)
+					_ = fs.Save(ctx, checkpoint.State{LastFinalized: blk.Number, UpdatedAt: time.Now()})
 					log.Printf("finalized block=%d txs=%d matches=%d", blk.Number, len(blk.Txs), matches)
 					continue
 				}
@@ -102,10 +151,6 @@ func main() {
 					continue
 				}
 
-				from, to, _ := reorgMgr.RewindRange(ancNum)
-				log.Printf("[REORG] ancestor=%d; rewinding (%d..%d] and reprocessing to current %d",
-					ancNum, from, to, blk.Number)
-
 				// 1) Clear our local view for numbers > ancestor (drop stale mapping)
 				reorgMgr.ResetAbove(ancNum)
 				// 2) Re-process new canonical blocks from ancestor+1 up to current finalized number
@@ -117,6 +162,7 @@ func main() {
 					}
 					matches, _ := srv.ProcessBlock(ctx, nb, true)
 					reorgMgr.Record(nb)
+					_ = fs.Save(ctx, checkpoint.State{LastFinalized: n, UpdatedAt: time.Now()})
 					log.Printf("[REORG] reprocessed block=%d matches=%d", nb.Number, matches)
 				}
 			}
