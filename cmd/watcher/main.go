@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,15 +16,38 @@ import (
 	"github.com/ARK21/deblock/internal/app/filter"
 	"github.com/ARK21/deblock/internal/app/heads"
 	"github.com/ARK21/deblock/internal/app/kafka"
+	"github.com/ARK21/deblock/internal/app/metrics"
 	"github.com/ARK21/deblock/internal/app/processor"
 	"github.com/ARK21/deblock/internal/app/reorg"
 	"github.com/ARK21/deblock/internal/app/rpc"
 	"github.com/ARK21/deblock/internal/app/users"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	conf := config.Read()
+
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		ok, reason := metrics.IsHealthy(time.Now())
+		if ok {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("ok"))
+			return
+		}
+		http.Error(w, reason, http.StatusServiceUnavailable)
+	})
+	httpSrv := &http.Server{Addr: conf.HttpAddr, Handler: mux}
+
+	go func() {
+		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("http server: %v", err)
+		}
+	}()
 
 	go func() {
 		ch := make(chan os.Signal, 1)
@@ -30,9 +55,11 @@ func main() {
 		<-ch
 		log.Println("starting graceful shutdown")
 		cancel()
-	}()
 
-	conf := config.Read()
+		if err := httpSrv.Shutdown(ctx); err != nil {
+			log.Fatalf("failed to shutdown server: %b", err)
+		}
+	}()
 
 	fs := checkpoint.NewFileStore(conf.CheckpointFile)
 	st, err := fs.Load(ctx)
@@ -136,6 +163,9 @@ func main() {
 				if reorgMgr.ParentOK(blk) {
 					// normal path
 					matches, _ := srv.ProcessBlock(ctx, blk, false)
+					metrics.IncBlocksProcessed()
+					metrics.AddTxsMatched(matches)
+					metrics.SetFinalized(blk.Number)
 					reorgMgr.Record(blk)
 					_ = fs.Save(ctx, checkpoint.State{LastFinalized: blk.Number, UpdatedAt: time.Now()})
 					log.Printf("finalized block=%d txs=%d matches=%d", blk.Number, len(blk.Txs), matches)
@@ -154,6 +184,7 @@ func main() {
 				// 1) Clear our local view for numbers > ancestor (drop stale mapping)
 				reorgMgr.ResetAbove(ancNum)
 				// 2) Re-process new canonical blocks from ancestor+1 up to current finalized number
+				metrics.IncReorg()
 				for n := ancNum + 1; n <= fh.Number; n++ {
 					nb, err := client.GetBlockByNumber(ctx, n, true)
 					if err != nil {
@@ -163,6 +194,9 @@ func main() {
 					matches, _ := srv.ProcessBlock(ctx, nb, true)
 					reorgMgr.Record(nb)
 					_ = fs.Save(ctx, checkpoint.State{LastFinalized: n, UpdatedAt: time.Now()})
+					metrics.IncReprocessed()
+					metrics.AddTxsMatched(matches)
+					metrics.SetFinalized(nb.Number)
 					log.Printf("[REORG] reprocessed block=%d matches=%d", nb.Number, matches)
 				}
 			}

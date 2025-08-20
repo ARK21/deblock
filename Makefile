@@ -8,3 +8,6 @@ run:
 
 test:
 	go test ./...
+
+test-kafka:
+	go test -tags=kafka ./test -run TestCQRS_EventBus_PublishesToKafka -v

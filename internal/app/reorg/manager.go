@@ -107,3 +107,5 @@ func (m *Manager) ResetAbove(ancestor uint64) {
 	}
 	m.highest = ancestor
 }
+
+func (m *Manager) Highest() uint64 { return m.highest }

@@ -9,19 +9,19 @@ import (
 
 	"github.com/ARK21/deblock/internal/app/filter"
 	"github.com/ARK21/deblock/internal/app/kafka"
+	"github.com/ARK21/deblock/internal/app/metrics"
 	"github.com/ARK21/deblock/internal/app/rpc"
-	"github.com/ThreeDotsLabs/watermill/components/cqrs"
 	"github.com/ethereum/go-ethereum/common"
 )
 
 type Service struct {
 	RPC      rpc.Client
 	Matcher  *filter.Matcher
-	EventBus *cqrs.EventBus
+	EventBus kafka.Publisher
 	ChainID  uint64
 }
 
-func NewService(rpcClient rpc.Client, matcher *filter.Matcher, eventBus *cqrs.EventBus, chainID uint64) *Service {
+func NewService(rpcClient rpc.Client, matcher *filter.Matcher, eventBus kafka.Publisher, chainID uint64) *Service {
 	if rpcClient == nil {
 		panic("RPC client cannot be nil")
 	}
@@ -115,55 +115,65 @@ func (s *Service) ProcessBlock(ctx context.Context, blk rpc.Block, reorged bool)
 		gasUsed := strToBig(rcpt.GasUsed)
 		egp := strToBig(rcpt.EffectiveGasPrice)
 		if gasUsed.Sign() > 0 && egp.Sign() > 0 {
-			feeWei = new(big.Int).Mul(feeWei, egp)
+			feeWei = new(big.Int).Mul(gasUsed, egp)
 		}
 
 		status := "reverted"
 		if rcpt.Status == 1 {
 			status = "success"
 		}
-
-		event := kafka.MatchedTxEvent{
-			TxHash:      m.tx.Hash,
-			BlockNumber: blk.Number,
-			BlockTime:   int64(blk.Timestamp),
-			From:        from,
-			To:          to,
-			AmountWei:   amountWei.String(),
-			AmountEth:   weiToEth(amountWei),
-			FeeWei:      feeWei.String(),
-			FeeEth:      weiToEth(feeWei),
-			Status:      status,
-			ChainID:     s.ChainID,
-			Reorged:     reorged,
-		}
+		published := 0
 
 		// Emit for incoming
 		if m.in != "" {
-			ie := event
-			ie.Header = kafka.NewMessageHeader("MatchedTxEvent")
-			ie.UserID = m.in
-			ie.Address = to
-			ie.Direction = "in"
-
-			if err = s.EventBus.Publish(ctx, ie); err != nil {
+			if err = s.EventBus.Publish(ctx, kafka.MatchedTxEvent{
+				Header:      kafka.NewMessageHeader("MatchedTxEvent"),
+				UserID:      m.in,
+				Address:     to,
+				Direction:   "in",
+				TxHash:      m.tx.Hash,
+				BlockNumber: blk.Number,
+				BlockTime:   int64(blk.Timestamp),
+				From:        from,
+				To:          to,
+				AmountWei:   amountWei.String(),
+				AmountEth:   weiToEth(amountWei),
+				FeeWei:      "0",
+				FeeEth:      "0",
+				Status:      status,
+				ChainID:     s.ChainID,
+				Reorged:     reorged,
+			}); err != nil {
 				log.Printf("failed to publish event: %v", err)
 			}
+			published++
 		}
 
 		// Emit for outgoing
 		if m.out != "" {
-			oe := event
-			oe.Header = kafka.NewMessageHeader("MatchedTxEvent")
-			oe.UserID = m.out
-			oe.Address = from
-			oe.Direction = "out"
-
-			if err = s.EventBus.Publish(ctx, oe); err != nil {
+			if err = s.EventBus.Publish(ctx, kafka.MatchedTxEvent{
+				Header:      kafka.NewMessageHeader("MatchedTxEvent"),
+				UserID:      m.out,
+				Address:     from,
+				Direction:   "out",
+				TxHash:      m.tx.Hash,
+				BlockNumber: blk.Number,
+				BlockTime:   int64(blk.Timestamp),
+				From:        from,
+				To:          to,
+				AmountWei:   amountWei.String(),
+				AmountEth:   weiToEth(amountWei),
+				FeeWei:      feeWei.String(),
+				FeeEth:      weiToEth(feeWei),
+				Status:      status,
+				ChainID:     s.ChainID,
+				Reorged:     reorged,
+			}); err != nil {
 				log.Printf("failed to publish event: %v", err)
 			}
+			published++
 		}
-
+		metrics.AddEventsPublished(published)
 	}
 	return len(ms), nil
 }

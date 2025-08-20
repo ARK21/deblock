@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/ARK21/deblock/internal/app/metrics"
 	"github.com/ARK21/deblock/internal/app/rpc"
 )
 
@@ -60,6 +61,7 @@ func (s *Source) Run(ctx context.Context) (<-chan rpc.Header, <-chan error) {
 			heads, errors := s.Client.SubscribeNewHeads(ctx)
 			if heads != nil {
 				log.Printf("[heads] ws subscribed")
+				metrics.SetWSUp(true)
 				// While WS OK, forward and reset backoff
 				for {
 					select {
@@ -69,6 +71,7 @@ func (s *Source) Run(ctx context.Context) (<-chan rpc.Header, <-chan error) {
 							break
 						}
 						if h.Number > last {
+							metrics.SetHead(h.Number)
 							out <- h
 							last = h.Number
 						}
@@ -86,6 +89,7 @@ func (s *Source) Run(ctx context.Context) (<-chan rpc.Header, <-chan error) {
 				}
 			}
 			log.Printf("[heads] fallback to HTTP polling every %s", poll)
+			metrics.SetWSUp(false)
 			t := time.NewTicker(poll)
 			for {
 				select {

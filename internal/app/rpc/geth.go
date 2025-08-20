@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ARK21/deblock/internal/app/metrics"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -97,7 +98,9 @@ type rpcBlock struct {
 
 func (c *GethClient) GetBlockByHash(ctx context.Context, hash string, fullTx bool) (Block, error) {
 	var rb rpcBlock
-	if err := c.http.CallContext(ctx, &rb, "eth_getBlockByHash", hash, fullTx); err != nil {
+	err := c.http.CallContext(ctx, &rb, "eth_getBlockByHash", hash, fullTx)
+	metrics.RPCCall("eth_getBlockByHash", err == nil)
+	if err != nil {
 		return Block{}, err
 	}
 	return convertBlock(rb), nil
@@ -105,7 +108,9 @@ func (c *GethClient) GetBlockByHash(ctx context.Context, hash string, fullTx boo
 
 func (c *GethClient) GetBlockByNumber(ctx context.Context, number uint64, fullTx bool) (Block, error) {
 	var rb rpcBlock
-	if err := c.http.CallContext(ctx, &rb, "eth_getBlockByNumber", hexutil.Uint64(number), fullTx); err != nil {
+	err := c.http.CallContext(ctx, &rb, "eth_getBlockByNumber", hexutil.Uint64(number), fullTx)
+	metrics.RPCCall("eth_getBlockByNumber", err == nil)
+	if err != nil {
 		return Block{}, err
 	}
 	return convertBlock(rb), nil
@@ -119,7 +124,9 @@ type rpcReceipt struct {
 
 func (c *GethClient) GetTxReceipt(ctx context.Context, txHash string) (Receipt, error) {
 	var rr rpcReceipt
-	if err := c.http.CallContext(ctx, &rr, "eth_getTransactionReceipt", txHash); err != nil {
+	err := c.http.CallContext(ctx, &rr, "eth_getTransactionReceipt", txHash)
+	metrics.RPCCall("eth_getTransactionReceipt", err == nil)
+	if err != nil {
 		return Receipt{}, err
 	}
 	egp := big.NewInt(0)
@@ -156,7 +163,12 @@ func (c *GethClient) BatchGetReceipts(ctx context.Context, hashes []string) (map
 				Result: &rr[k],
 			}
 		}
-		if err := c.http.BatchCallContext(ctx, batch); err != nil {
+		metrics.ObserveReceiptBatch(len(h))
+		metrics.ReceiptsInFlight(len(h))
+		err := c.http.BatchCallContext(ctx, batch)
+		metrics.ReceiptsInFlight(0)
+		metrics.RPCCall("eth_getTransactionReceipt_batch", err == nil)
+		if err != nil {
 			return nil, fmt.Errorf("batch call error: %w", err)
 		}
 		for k, r := range rr {
@@ -186,7 +198,9 @@ func (c *GethClient) GetChainID(ctx context.Context) (uint64, error) {
 
 func (c *GethClient) GetBlockNumber(ctx context.Context) (uint64, error) {
 	var num hexutil.Uint64
-	if err := c.http.CallContext(ctx, &num, "eth_blockNumber"); err != nil {
+	err := c.http.CallContext(ctx, &num, "eth_blockNumber")
+	metrics.RPCCall("eth_blockNumber", err == nil)
+	if err != nil {
 		return 0, err
 	}
 	return uint64(num), nil

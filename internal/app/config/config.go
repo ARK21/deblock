@@ -20,6 +20,7 @@ type Config struct {
 	WSReconnectCeil  time.Duration
 	CheckpointFile   string
 	BootstrapBlocks  int
+	HttpAddr         string
 }
 
 func Default() Config {
@@ -74,6 +75,15 @@ func Read() Config {
 		}
 	} else {
 		cfg.BootstrapBlocks = 0
+	}
+	if port, ok := os.LookupEnv("SERVICE_PORT"); ok {
+		if _, err := strconv.Atoi(port); err == nil {
+			cfg.HttpAddr = ":" + port
+		} else {
+			log.Fatalf("invalid SERVICE_PORT value: %v", err)
+		}
+	} else {
+		cfg.HttpAddr = ":8080"
 	}
 
 	return cfg
