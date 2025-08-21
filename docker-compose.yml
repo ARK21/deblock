@@ -1,4 +1,5 @@
-version: "3.8"
+name: deblock
+
 services:
   kafka:
     image: confluentinc/cp-kafka:7.6.1
@@ -23,7 +24,21 @@ services:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
     ports:
-      - "8080:8080"
+      - "29093:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092   # <-- talk to INTERNAL listener
+
+  watcher:
+    build: . -no-cache
+    env_file:
+      - .env
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    volumes:
+      - watcher-data:/app/data
+
+volumes:
+  watcher-data:

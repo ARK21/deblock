@@ -6,6 +6,21 @@ build:
 run:
 	go run ./cmd/watcher
 
+up:
+	docker compose up -d
+
+down:
+	docker compose down -v
+
+logs:
+	docker compose logs -f watcher
+
+fmt:
+	go fmt ./...
+
+lint:
+	go vet ./...
+
 test:
 	go test ./...
 

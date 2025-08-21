@@ -7,10 +7,9 @@ import (
 )
 
 type MessageHeader struct {
-	ID            string `json:"id"`
-	EventName     string `json:"event_name"`
-	CorrelationID string `json:"correlation_id"` // TODO delete?
-	PublishedAt   string `json:"published_at"`
+	ID          string `json:"id"`
+	EventName   string `json:"event_name"`
+	PublishedAt string `json:"published_at"`
 }
 
 func NewMessageHeader(eventName string) MessageHeader {

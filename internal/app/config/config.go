@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -14,7 +15,7 @@ type Config struct {
 	KafkaTopic       string
 	Confirmations    int
 	ReorgDepth       int
-	UsersFile        string
+	AddressesFile    string
 	HeadPollInterval time.Duration
 	WSReconnectFloor time.Duration
 	WSReconnectCeil  time.Duration
@@ -37,10 +38,35 @@ func Default() Config {
 func Read() Config {
 	cfg := Default()
 
+	if confirmations, ok := os.LookupEnv("CONFIRMATIONS"); ok {
+		if confInt, err := strconv.Atoi(confirmations); err == nil {
+			cfg.Confirmations = confInt
+		}
+	}
+	if reorgDepth, ok := os.LookupEnv("REORG_DEPTH"); ok {
+		if reorgInt, err := strconv.Atoi(reorgDepth); err == nil {
+			cfg.ReorgDepth = reorgInt
+		}
+	}
 	if usersFile, exists := os.LookupEnv("ADDRESSES_FILE"); exists {
-		cfg.UsersFile = usersFile
+		cfg.AddressesFile = usersFile
 	} else {
-		log.Fatal("ADDRESSES_FILE environment variable not set")
+		cfg.AddressesFile = "./addresses.csv"
+	}
+	if headPollInterval, ok := os.LookupEnv("HEAD_POLL_INTERVAL"); ok {
+		if hpi, err := time.ParseDuration(headPollInterval); err == nil {
+			cfg.HeadPollInterval = hpi
+		}
+	}
+	if wsReconnectFloor, ok := os.LookupEnv("WS_RECONNECT_FLOOR"); ok {
+		if wrf, err := time.ParseDuration(wsReconnectFloor); err == nil {
+			cfg.WSReconnectFloor = wrf
+		}
+	}
+	if wsReconnectCeil, ok := os.LookupEnv("WS_RECONNECT_CEIL"); ok {
+		if wrc, err := time.ParseDuration(wsReconnectCeil); err == nil {
+			cfg.WSReconnectCeil = wrc
+		}
 	}
 	if url, ok := os.LookupEnv("ETH_WS_URL"); ok {
 		cfg.WsURL = url
@@ -59,8 +85,6 @@ func Read() Config {
 	}
 	if kt, ok := os.LookupEnv("KAFKA_TOPIC"); ok {
 		cfg.KafkaTopic = kt
-	} else {
-		log.Fatal("KAFKA_TOPIC env variable not set")
 	}
 	if cf, ok := os.LookupEnv("CHECKPOINT_FILE"); ok {
 		cfg.CheckpointFile = cf
@@ -85,6 +109,20 @@ func Read() Config {
 	} else {
 		cfg.HttpAddr = ":8080"
 	}
+	fmt.Printf("Watcher configs:\n")
+	fmt.Printf("ETH_WS_URL: %s\n", cfg.WsURL)
+	fmt.Printf("ETH_HTTP_URL: %s\n", cfg.HttpUrl)
+	fmt.Printf("KAFKA_BROKERS: %s\n", cfg.KafkaBrokers)
+	fmt.Printf("KAFKA_TOPIC: %s\n", cfg.KafkaTopic)
+	fmt.Printf("CONFIRMATIONS: %d\n", cfg.Confirmations)
+	fmt.Printf("REORG_DEPTH: %d\n", cfg.ReorgDepth)
+	fmt.Printf("ADDRESSES_FILE: %s\n", cfg.AddressesFile)
+	fmt.Printf("HEAD_POLL_INTERVAL: %s\n", cfg.HeadPollInterval)
+	fmt.Printf("WS_RECONNECT_FLOOR: %s\n", cfg.WSReconnectFloor)
+	fmt.Printf("WS_RECONNECT_CEIL: %s\n", cfg.WSReconnectCeil)
+	fmt.Printf("CHECKPOINT_FILE: %s\n", cfg.CheckpointFile)
+	fmt.Printf("BOOTSTRAP_BLOCKS: %d\n", cfg.BootstrapBlocks)
+	fmt.Printf("SERVICE_PORT: %s\n", cfg.HttpAddr)
 
 	return cfg
 }

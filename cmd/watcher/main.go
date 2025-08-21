@@ -68,7 +68,7 @@ func main() {
 	}
 	log.Printf("checkpoint: last_finalized=%d", st.LastFinalized)
 
-	u := users.LoadUsers(conf.UsersFile)
+	u := users.LoadUsers(conf.AddressesFile)
 
 	matcher := filter.NewMatcher(u)
 
@@ -148,11 +148,13 @@ func main() {
 				log.Printf("heads channel closed: %v", hch)
 				return
 			}
-			finalized := finalizer.Add(heads.Header{
+			header := heads.Header{
 				Hash:       h.Hash,
 				ParentHash: h.ParentHash,
 				Number:     h.Number,
-			})
+			}
+			log.Printf("handeling new head: %s (parent=%s, number=%d)", header.Hash, header.ParentHash, header.Number)
+			finalized := finalizer.Add(header)
 			for _, fh := range finalized {
 				// fetch the finalized block on the *current* canonical head
 				blk, err := client.GetBlockByNumber(ctx, fh.Number, true)
