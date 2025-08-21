@@ -43,10 +43,10 @@ flowchart LR
   subgraph ETH["Ethereum RPC (WS + HTTP)"]
     NH[eth_subscribe:newHeads] --> HS[Heads Source]
     GB[eth_getBlockByNumber] --> BLK[Block Fetcher]
-    RC[eth_getTransactionReceipt (batch)] --> PROC[Processor]
+    RC[eth_getTransactionReceipt] --> PROC[Processor]
   end
 
-  HS --> FZ[Finalizer (N confirmations)]
+  HS --> FZ[Finalizer]
   FZ --> BLK
   BLK --> RM[Reorg Manager]
   RM -->|canonical| PROC
@@ -62,7 +62,7 @@ flowchart LR
 
   subgraph OBS["Observability"]
     HZ[/healthz/]
-    MX[/metrics (Prometheus)/]
+    MX[/metrics/]
     LOG[Structured logs]
   end
   HS --> OBS
