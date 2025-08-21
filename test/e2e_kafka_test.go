@@ -49,9 +49,8 @@ func TestCQRS_EventBus_PublishesToKafka(t *testing.T) {
 
 	sub, err := wmk.NewSubscriber(
 		wmk.SubscriberConfig{
-			Brokers:       []string{brokers},
-			Unmarshaler:   wmk.DefaultMarshaler{},
-			ConsumerGroup: "e2e-cqrs",
+			Brokers:     []string{brokers},
+			Unmarshaler: wmk.DefaultMarshaler{},
 		},
 		logger,
 	)
@@ -94,9 +93,9 @@ func TestCQRS_EventBus_PublishesToKafka(t *testing.T) {
 
 	var payload map[string]interface{}
 	require.NoError(t, json.Unmarshal(msg.Payload, &payload))
-	require.Equal(t, "u1", payload["userId"])
+	require.Equal(t, "u1", payload["user_id"])
 	require.Equal(t, "out", payload["direction"])
-	require.Equal(t, "0xdeadbeef", payload["txHash"])
+	require.Equal(t, "0xdeadbeef", payload["tx_hash"])
 }
 
 func getenv(k, def string) string {
