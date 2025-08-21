@@ -30,7 +30,7 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092   # <-- talk to INTERNAL listener
 
   watcher:
-    build: . -no-cache
+    build: .
     env_file:
       - .env
     depends_on:
